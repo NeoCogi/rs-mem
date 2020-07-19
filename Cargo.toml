@@ -3,6 +3,7 @@ name = "rs-mem"
 version = "0.1.0"
 authors = ["Raja Lehtihet <raja.lehtihet@gmail.com>", "Wael El Oraiby <wael.eloraiby@gmail.com>"]
 edition = "2018"
+license = "BSD-3-Clause"
 description = "minimal memory helpers (no dependency on std)"
 repository = "https://github.com/NeoCogi/rs-mem"
 readme = "README.md"
