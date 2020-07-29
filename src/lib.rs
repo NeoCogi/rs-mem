@@ -31,28 +31,47 @@
 #![allow(dead_code, non_snake_case, non_camel_case_types, non_upper_case_globals)]
 #[allow(improper_ctypes)]
 
-pub unsafe fn allocRaw(size: usize) -> *mut u8 {
-    //let addr = libc::memalign(core::mem::size_of::<usize>(), size) as *mut u8;
-    let addr = libc::calloc(core::mem::size_of::<usize>(), size) as *mut u8;
-    //libc::memset(addr as *mut libc::c_void, 0, size);
-    addr
+use core::alloc::*;
+use core::*;
+
+mod os;
+use os::*;
+
+pub unsafe fn realloc_fallback(
+    alloc: &System,
+    ptr: *mut u8,
+    old_layout: Layout,
+    new_size: usize,
+) -> *mut u8 {
+    // Docs for GlobalAlloc::realloc require this to be valid:
+    let new_layout = Layout::from_size_align_unchecked(new_size, old_layout.align());
+
+    let new_ptr = GlobalAlloc::alloc(alloc, new_layout);
+    if !new_ptr.is_null() {
+        let size = cmp::min(old_layout.size(), new_size);
+        ptr::copy_nonoverlapping(ptr, new_ptr, size);
+        GlobalAlloc::dealloc(alloc, ptr, old_layout);
+    }
+    new_ptr
 }
 
-pub unsafe fn freeRaw(arr: *mut u8) {
-    libc::free(arr as *mut libc::c_void);
-}
+pub const sysalloc : System = System;
 
 pub unsafe fn alloc<T>() -> *mut T {
-    allocRaw(core::mem::size_of::<T>()) as *mut T
+    sysalloc.alloc(Layout::new::<T>()) as *mut T
 }
 
 pub unsafe fn free<T>(t: *mut T) {
-    freeRaw(t as *mut u8)
+    sysalloc.dealloc(t as *mut u8, Layout::new::<T>());
 }
 
 // TODO: change this to const generics when they become stable and return a slice
 pub unsafe fn allocArray<T>(count: usize) -> *mut T {
-    allocRaw(core::mem::size_of::<T>() * count) as *mut T
+    let l = Layout::array::<T>(count);
+    match l {
+        Ok(layout) => sysalloc.alloc(layout) as *mut T,
+        _ => panic!("unable to create layout")
+    }
 }
 
 // TODO: change this to slice once const generics stable
@@ -61,9 +80,16 @@ pub unsafe fn freeArray<T>(ptr: *mut T, count: usize) {
     for i in 0..count {
         ::core::ptr::drop_in_place(&arr[i] as *const T as *mut T);
     }
-    free(ptr);
+    let l = Layout::array::<T>(count);
+    match l {
+        Ok(layout) => sysalloc.dealloc(ptr as *mut u8, layout),
+        _ => panic!("unable to create layout")
+    }
 }
 
+////////////////////////////////////////////////////////////////////////////////
+/// TODO: remove these when the alloc handler stabilize in alloc
+////////////////////////////////////////////////////////////////////////////////
 #[repr(C)]
 pub struct Unique<T: ?Sized> {
     ptr         : *mut T,
@@ -72,8 +98,8 @@ pub struct Unique<T: ?Sized> {
 
 impl<T> Unique<T> {
     pub fn new(ptr: *mut T) -> Self { Self { ptr : ptr, _marker: ::core::marker::PhantomData } }
-    pub fn getMutPtr(&mut self) -> *mut T { self.ptr }
-    pub fn getPtr(&self) -> *const T { self.ptr }
+    pub fn get_mut_ptr(&mut self) -> *mut T { self.ptr }
+    pub fn get_ptr(&self) -> *const T { self.ptr }
 }
 
 #[repr(C)]
@@ -93,14 +119,14 @@ impl<T> Box<T> {
     pub fn new(x: T) -> Box<T> {
         unsafe {
             let addr = alloc::<T>();
-            *addr = x;
+            ptr::write(addr, x);
             Self { uptr: Unique::new(addr) }
         }
     }
 
-    pub fn asRef(&self) -> &T { unsafe { &(*self.uptr.getPtr()) } }
-    pub fn asMut(&mut self) -> &T { unsafe { &mut (*self.uptr.getMutPtr()) } }
-    pub fn intoRaw(self) -> *mut T {
+    pub fn as_ref(&self) -> &T { unsafe { &(*self.uptr.get_ptr()) } }
+    pub fn as_mut(&mut self) -> &T { unsafe { &mut (*self.uptr.get_mut_ptr()) } }
+    pub fn into_raw(self) -> *mut T {
         let m = ::core::mem::ManuallyDrop::new(self);
         m.uptr.ptr
     }
@@ -112,7 +138,7 @@ impl<T> Box<T> {
     pub fn unbox(self) -> T {
         unsafe {
             let ptr = self.uptr.ptr;
-            let v = self.intoRaw().read();
+            let v = self.into_raw().read();
             free(ptr);
             v
         }
@@ -122,7 +148,7 @@ impl<T> Box<T> {
 impl<T> Drop for Box<T> {
     fn drop(&mut self) {
         unsafe {
-            let addr = self.uptr.getMutPtr();
+            let addr = self.uptr.get_mut_ptr();
             ::core::ptr::drop_in_place(addr);
             free(addr);
         }
@@ -187,7 +213,7 @@ mod tests {
     #[test]
     fn testBoxFromToRaw() {
         let b = Box::new(1234);
-        let r = b.intoRaw();
+        let r = b.into_raw();
         let _b = Box::fromRaw(r);
     }
 }

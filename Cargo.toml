@@ -1,6 +1,6 @@
 [package]
 name = "rs-mem"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Raja Lehtihet <raja.lehtihet@gmail.com>", "Wael El Oraiby <wael.eloraiby@gmail.com>"]
 edition = "2018"
 license = "BSD-3-Clause"
@@ -12,3 +12,4 @@ readme = "README.md"
 [dependencies]
 rs-ctypes = "0.1.1"
 libc = "0.2.72"
+cfg-if = "0.1.10"
