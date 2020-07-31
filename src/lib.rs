@@ -91,6 +91,16 @@ pub unsafe fn free_array<T>(ptr: *mut T, count: usize, res_count: usize) {
     }
 }
 
+// TODO: change this to slice once const generics stable
+pub unsafe fn free_array_ptr<T>(ptr: *mut T, count: usize) {
+    let l = Layout::array::<T>(count);
+    match l {
+        Ok(layout) => sysalloc.dealloc(ptr as *mut u8, layout),
+        _ => panic!("unable to create layout")
+    }
+}
+
+
 ////////////////////////////////////////////////////////////////////////////////
 /// TODO: remove these when the alloc handler stabilize in alloc
 ////////////////////////////////////////////////////////////////////////////////
