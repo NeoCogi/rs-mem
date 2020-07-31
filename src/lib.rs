@@ -66,8 +66,8 @@ pub unsafe fn free<T>(t: *mut T) {
 }
 
 // TODO: change this to const generics when they become stable and return a slice
-pub unsafe fn allocArray<T>(count: usize) -> *mut T {
-    let l = Layout::array::<T>(count);
+pub unsafe fn alloc_array<T>(res_count: usize) -> *mut T {
+    let l = Layout::array::<T>(res_count);
     match l {
         Ok(layout) => sysalloc.alloc(layout) as *mut T,
         _ => panic!("unable to create layout")
@@ -75,7 +75,11 @@ pub unsafe fn allocArray<T>(count: usize) -> *mut T {
 }
 
 // TODO: change this to slice once const generics stable
-pub unsafe fn freeArray<T>(ptr: *mut T, count: usize) {
+pub unsafe fn free_array<T>(ptr: *mut T, count: usize, res_count: usize) {
+    if count > res_count {
+        panic!("count exceeded reserved count")
+    }
+
     let arr      = core::slice::from_raw_parts_mut(ptr, count); // this will keep a pointer (will not free it)
     for i in 0..count {
         ::core::ptr::drop_in_place(&arr[i] as *const T as *mut T);
