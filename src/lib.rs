@@ -74,6 +74,14 @@ pub unsafe fn alloc_array<T>(res_count: usize) -> *mut T {
     }
 }
 
+pub unsafe fn alloc_array_zeroed<T>(res_count: usize) -> *mut T {
+    let l = Layout::array::<T>(res_count);
+    match l {
+        Ok(layout) => sysalloc.alloc_zeroed(layout) as *mut T,
+        _ => panic!("unable to create layout")
+    }
+}
+
 // TODO: change this to slice once const generics stable
 pub unsafe fn free_array<T>(ptr: *mut T, count: usize, res_count: usize) {
     if count > res_count {
