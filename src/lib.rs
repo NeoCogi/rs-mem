@@ -58,7 +58,7 @@ pub unsafe fn realloc_fallback(
 pub const sysalloc : System = System;
 
 pub unsafe fn alloc<T>() -> *mut T {
-    sysalloc.alloc(Layout::new::<T>()) as *mut T
+     sysalloc.alloc(Layout::new::<T>()) as *mut rs_ctypes::c_void as *mut T
 }
 
 pub unsafe fn free<T>(t: *mut T) {
@@ -118,18 +118,28 @@ pub struct Unique<T: ?Sized> {
     _marker     : ::core::marker::PhantomData<T>,
 }
 
-impl<T> Unique<T> {
+impl<T: ?Sized> Unique<T> {
     pub fn new(ptr: *mut T) -> Self { Self { ptr : ptr, _marker: ::core::marker::PhantomData } }
     pub fn get_mut_ptr(&mut self) -> *mut T { self.ptr }
     pub fn get_ptr(&self) -> *const T { self.ptr }
 }
 
 #[repr(C)]
-pub struct Box<T>{
+pub struct Box<T: ?Sized>{
     uptr: Unique<T>
 }
 
-impl<T> Box<T> {
+impl<T: ?Sized> Drop for Box<T> {
+    fn drop(&mut self) {
+        unsafe {
+            let addr = self.uptr.get_mut_ptr() as *mut u8;  // TODO: this is a hack to pass thin to fat type conversion error
+            ::core::ptr::drop_in_place(addr);
+            free(addr);
+        }
+    }
+}
+
+impl<T: Sized> Box<T> {
     /// Allocates memory on the heap and then places `x` into it.
     ///
     /// # Examples
@@ -138,26 +148,15 @@ impl<T> Box<T> {
     /// let five = Box::new(5);
     /// ```
     #[inline(always)]
-    pub fn new(x: T) -> Box<T> {
+    fn new(x: T) -> Box<T> {
         unsafe {
             let addr = alloc::<T>();
             ptr::write(addr, x);
             Self { uptr: Unique::new(addr) }
         }
     }
-
-    pub fn as_ref(&self) -> &T { unsafe { &(*self.uptr.get_ptr()) } }
-    pub fn as_mut(&mut self) -> &T { unsafe { &mut (*self.uptr.get_mut_ptr()) } }
-    pub fn into_raw(self) -> *mut T {
-        let m = ::core::mem::ManuallyDrop::new(self);
-        m.uptr.ptr
-    }
-
-    pub fn fromRaw(raw: *mut T) -> Self {
-        Self { uptr: Unique::new(raw) }
-    }
-
-    pub fn unbox(self) -> T {
+    
+    fn unbox(self) -> T {
         unsafe {
             let ptr = self.uptr.ptr;
             let v = self.into_raw().read();
@@ -165,19 +164,25 @@ impl<T> Box<T> {
             v
         }
     }
-}
 
-impl<T> Drop for Box<T> {
-    fn drop(&mut self) {
-        unsafe {
-            let addr = self.uptr.get_mut_ptr();
-            ::core::ptr::drop_in_place(addr);
-            free(addr);
-        }
+    fn get_unique(&mut self) -> &mut Unique<T> {
+        &mut self.uptr
     }
 }
 
 
+impl<T: ?Sized> Box<T> {
+    fn as_ref(&self) -> &T { unsafe { &(*self.uptr.get_ptr()) } }
+    fn as_mut(&mut self) -> &T { unsafe { &mut (*self.uptr.get_mut_ptr()) } }
+    fn into_raw(self) -> *mut T {
+        let m = ::core::mem::ManuallyDrop::new(self);
+        m.uptr.ptr
+    }
+
+    fn from_raw(raw: *mut T) -> Self {
+        Self { uptr: Unique::new(raw) }
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -236,6 +241,6 @@ mod tests {
     fn testBoxFromToRaw() {
         let b = Box::new(1234);
         let r = b.into_raw();
-        let _b = Box::fromRaw(r);
+        let _b = Box::from_raw(r);
     }
 }
