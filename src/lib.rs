@@ -148,7 +148,7 @@ impl<T: Sized> Box<T> {
     /// let five = Box::new(5);
     /// ```
     #[inline(always)]
-    fn new(x: T) -> Box<T> {
+    pub fn new(x: T) -> Box<T> {
         unsafe {
             let addr = alloc::<T>();
             ptr::write(addr, x);
@@ -156,7 +156,7 @@ impl<T: Sized> Box<T> {
         }
     }
     
-    fn unbox(self) -> T {
+    pub fn unbox(self) -> T {
         unsafe {
             let ptr = self.uptr.ptr;
             let v = self.into_raw().read();
@@ -165,21 +165,21 @@ impl<T: Sized> Box<T> {
         }
     }
 
-    fn get_unique(&mut self) -> &mut Unique<T> {
+    pub fn get_unique(&mut self) -> &mut Unique<T> {
         &mut self.uptr
     }
 }
 
 
 impl<T: ?Sized> Box<T> {
-    fn as_ref(&self) -> &T { unsafe { &(*self.uptr.get_ptr()) } }
-    fn as_mut(&mut self) -> &T { unsafe { &mut (*self.uptr.get_mut_ptr()) } }
-    fn into_raw(self) -> *mut T {
+    pub fn as_ref(&self) -> &T { unsafe { &(*self.uptr.get_ptr()) } }
+    pub fn as_mut(&mut self) -> &T { unsafe { &mut (*self.uptr.get_mut_ptr()) } }
+    pub fn into_raw(self) -> *mut T {
         let m = ::core::mem::ManuallyDrop::new(self);
         m.uptr.ptr
     }
 
-    fn from_raw(raw: *mut T) -> Self {
+    pub fn from_raw(raw: *mut T) -> Self {
         Self { uptr: Unique::new(raw) }
     }
 }
