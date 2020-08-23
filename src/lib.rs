@@ -132,21 +132,14 @@ pub struct Box<T: ?Sized>{
 impl<T: ?Sized> Drop for Box<T> {
     fn drop(&mut self) {
         unsafe {
+            ::core::ptr::drop_in_place(self.uptr.get_mut_ptr());
             let addr = self.uptr.get_mut_ptr() as *mut u8;  // TODO: this is a hack to pass thin to fat type conversion error
-            ::core::ptr::drop_in_place(addr);
             free(addr);
         }
     }
 }
 
 impl<T: Sized> Box<T> {
-    /// Allocates memory on the heap and then places `x` into it.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// let five = Box::new(5);
-    /// ```
     #[inline(always)]
     pub fn new(x: T) -> Box<T> {
         unsafe {
@@ -183,6 +176,7 @@ impl<T: ?Sized> Box<T> {
         Self { uptr: Unique::new(raw) }
     }
 }
+
 
 #[cfg(test)]
 mod tests {
@@ -242,5 +236,35 @@ mod tests {
         let b = Box::new(1234);
         let r = b.into_raw();
         let _b = Box::from_raw(r);
+    }
+
+
+    trait TestTrait : Drop {
+        fn blabla(&self);
+    }
+
+    struct TestStruct {
+        a: std::vec::Vec<usize>
+    }
+
+    impl TestTrait for TestStruct {
+        fn blabla(&self) {}
+    }
+
+    impl Drop for TestStruct {
+        fn drop(&mut self) {
+        }
+    }
+
+    struct TestStruct2 {
+        t: Box<dyn TestTrait>
+    }
+    #[test]
+    fn testTrait() {
+        let mut v = std::vec::Vec::new();
+        v.push(123);
+        v.push(456);
+        let a = Box::new(TestStruct { a: v });
+        let _ = Box::from_raw(a.into_raw() as *mut dyn TestTrait);
     }
 }
