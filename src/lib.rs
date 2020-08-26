@@ -33,6 +33,7 @@
 
 use core::alloc::*;
 use core::*;
+use core::sync::atomic::*;
 
 mod os;
 use os::*;
@@ -141,14 +142,14 @@ impl<T: ?Sized> Drop for Box<T> {
 
 impl<T: Sized> Box<T> {
     #[inline(always)]
-    pub fn new(x: T) -> Box<T> {
+    pub fn new(x: T) -> Self {
         unsafe {
             let addr = alloc::<T>();
             ptr::write(addr, x);
             Self { uptr: Unique::new(addr) }
         }
     }
-    
+
     pub fn unbox(self) -> T {
         unsafe {
             let ptr = self.uptr.ptr;
@@ -177,6 +178,82 @@ impl<T: ?Sized> Box<T> {
     }
 }
 
+
+#[repr(C)]
+struct ArcCell<T: ?Sized> {
+    count: AtomicIsize,
+    data: T,
+}
+
+impl<T: ?Sized> ArcCell<T> {
+    pub fn count(&self) -> isize {
+        self.count.load(Ordering::Relaxed)
+    }
+
+    pub fn inc(&mut self) {
+        self.count.fetch_add(1, Ordering::SeqCst);
+    }
+
+    pub fn dec(&mut self) -> isize { self.count.fetch_sub(1, Ordering::SeqCst) }
+}
+
+pub struct Arc<T: ?Sized>(*mut ArcCell<T>);
+
+impl<T: ?Sized> Arc<T> {
+    pub fn as_ptr(this: &Arc<T>) -> *const T {
+        unsafe { &(*this.0).data as *const T }
+    }
+}
+
+impl<T: Sized> Arc<T> {
+    pub fn new(x: T) -> Self {
+        unsafe {
+            let addr = alloc::<ArcCell<T>>();
+            ptr::write(addr, ArcCell { data: x, count: AtomicIsize::new(1) });
+            Self(addr)
+        }
+    }
+}
+
+impl<T: ?Sized> Drop for Arc<T> {
+    fn drop(&mut self) {
+        unsafe {
+            let s = &mut (*self.0);
+            if s.dec() == 1 {
+                ::core::ptr::drop_in_place(self.0);
+                let addr = self.0 as *mut u8;  // TODO: this is a hack to pass thin to fat type conversion error
+                free(addr);
+            }
+        }
+    }
+}
+
+impl<T: ?Sized> Clone for Arc<T> {
+    fn clone(&self) -> Self {
+        unsafe {
+            let s = &mut (*self.0);
+            s.inc();
+            Self(self.0)
+        }
+    }
+}
+
+
+impl<T: ?Sized> core::ops::Deref for Arc<T> {
+    type Target = T;
+    fn deref(&self) -> &Self::Target {
+        unsafe { &(*self.0).data }
+    }
+}
+
+impl<T: ?Sized> AsRef<T> for Arc<T> {
+    fn as_ref(&self) -> &T {
+        unsafe { &(*self.0).data }
+    }
+}
+
+unsafe impl<T: ?Sized> Send for Arc<T> {}
+unsafe impl<T: ?Sized> Sync for Arc<T> {}
 
 #[cfg(test)]
 mod tests {
@@ -259,6 +336,7 @@ mod tests {
     struct TestStruct2 {
         t: Box<dyn TestTrait>
     }
+
     #[test]
     fn testTrait() {
         let mut v = std::vec::Vec::new();
@@ -266,5 +344,27 @@ mod tests {
         v.push(456);
         let a = Box::new(TestStruct { a: v });
         let _ = Box::from_raw(a.into_raw() as *mut dyn TestTrait);
+    }
+
+    #[test]
+    fn testArc() {
+        let mut v = std::vec::Vec::new();
+        v.push(123);
+        v.push(456);
+        let _ = Arc::new(TestStruct { a: v });
+    }
+
+    #[test]
+    fn testArcRef() {
+        let mut v = std::vec::Vec::new();
+        v.push(123);
+        v.push(456);
+        let a = Arc::new(TestStruct { a: v });
+        let d = a.as_ref();
+        assert_eq!(d.a[0], 123);
+        assert_eq!(d.a[1], 456);
+        let f = &*a;
+        assert_eq!(f.a[0], 123);
+        assert_eq!(f.a[1], 456);
     }
 }
