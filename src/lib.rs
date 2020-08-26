@@ -199,6 +199,12 @@ impl<T: ?Sized> ArcCell<T> {
 
 pub struct Arc<T: ?Sized>(*mut ArcCell<T>);
 
+impl<T: ?Sized> Arc<T> {
+    pub fn as_ptr(this: &Arc<T>) -> *const T {
+        unsafe { &(*this.0).data as *const T }
+    }
+}
+
 impl<T: Sized> Arc<T> {
     pub fn new(x: T) -> Self {
         unsafe {
@@ -232,6 +238,7 @@ impl<T: ?Sized> Clone for Arc<T> {
     }
 }
 
+
 impl<T: ?Sized> core::ops::Deref for Arc<T> {
     type Target = T;
     fn deref(&self) -> &Self::Target {
@@ -239,6 +246,14 @@ impl<T: ?Sized> core::ops::Deref for Arc<T> {
     }
 }
 
+impl<T: ?Sized> AsRef<T> for Arc<T> {
+    fn as_ref(&self) -> &T {
+        unsafe { &(*self.0).data }
+    }
+}
+
+unsafe impl<T: ?Sized> Send for Arc<T> {}
+unsafe impl<T: ?Sized> Sync for Arc<T> {}
 
 #[cfg(test)]
 mod tests {
@@ -321,6 +336,7 @@ mod tests {
     struct TestStruct2 {
         t: Box<dyn TestTrait>
     }
+
     #[test]
     fn testTrait() {
         let mut v = std::vec::Vec::new();
@@ -339,10 +355,16 @@ mod tests {
     }
 
     #[test]
-    fn testArcTrait() {
+    fn testArcRef() {
         let mut v = std::vec::Vec::new();
         v.push(123);
         v.push(456);
-        let _ = Arc::new(TestStruct { a: v });
+        let a = Arc::new(TestStruct { a: v });
+        let d = a.as_ref();
+        assert_eq!(d.a[0], 123);
+        assert_eq!(d.a[1], 456);
+        let f = &*a;
+        assert_eq!(f.a[0], 123);
+        assert_eq!(f.a[1], 456);
     }
 }
