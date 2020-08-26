@@ -153,7 +153,7 @@ impl<T: Sized> Box<T> {
     pub fn unbox(self) -> T {
         unsafe {
             let ptr = self.uptr.ptr;
-            let v = self.into_raw().read();
+            let v = Self::into_raw(self).read();
             free(ptr);
             v
         }
@@ -168,8 +168,8 @@ impl<T: Sized> Box<T> {
 impl<T: ?Sized> Box<T> {
     pub fn as_ref(&self) -> &T { unsafe { &(*self.uptr.get_ptr()) } }
     pub fn as_mut(&mut self) -> &T { unsafe { &mut (*self.uptr.get_mut_ptr()) } }
-    pub fn into_raw(self) -> *mut T {
-        let m = ::core::mem::ManuallyDrop::new(self);
+    pub fn into_raw(this: Self) -> *mut T {
+        let m = ::core::mem::ManuallyDrop::new(this);
         m.uptr.ptr
     }
 
@@ -311,7 +311,7 @@ mod tests {
     #[test]
     fn testBoxFromToRaw() {
         let b = Box::new(1234);
-        let r = b.into_raw();
+        let r = Box::into_raw(b);
         let _b = Box::from_raw(r);
     }
 
@@ -343,7 +343,7 @@ mod tests {
         v.push(123);
         v.push(456);
         let a = Box::new(TestStruct { a: v });
-        let _ = Box::from_raw(a.into_raw() as *mut dyn TestTrait);
+        let _ = Box::from_raw(Box::into_raw(a) as *mut dyn TestTrait);
     }
 
     #[test]
